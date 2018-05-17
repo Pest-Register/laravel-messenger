@@ -39,7 +39,7 @@ class Thread extends Eloquent
      * @var null|Models::user()
      */
     protected $creatorCache = null;
-    
+
     /**
      * {@inheritDoc}
      */
@@ -63,14 +63,24 @@ class Thread extends Eloquent
     }
 
     /**
+     * Eager load the latest message rather than pulling it from all of them
+     * @author Nicholas Zuccarelli
+     * @return mixed
+     */
+    public function latestMessage() {
+        return $this->hasOne(Models::classname(Message::class), 'thread_id', 'id')
+            ->orderBy('created_at', 'DESC');
+    }
+
+    /**
      * Returns the latest message from a thread.
      *
      * @return null|\Cmgmyr\Messenger\Models\Message
      */
-    public function getLatestMessageAttribute()
-    {
-        return $this->messages()->latest()->first();
-    }
+//    public function getLatestMessageAttribute()
+//    {
+//        return $this->messages()->latest()->first();
+//    }
 
     /**
      * Participants relationship.
@@ -372,18 +382,18 @@ class Thread extends Eloquent
         $usersTable = Models::table('users');
 
         switch ($dbDriver) {
-        case 'pgsql':
-        case 'sqlite':
-            $columnString = implode(" || ' ' || " . $tablePrefix . $usersTable . '.', $columns);
-            $selectString = '(' . $tablePrefix . $usersTable . '.' . $columnString . ') as name';
-            break;
-        case 'sqlsrv':
-            $columnString = implode(" + ' ' + " . $tablePrefix . $usersTable . '.', $columns);
-            $selectString = '(' . $tablePrefix . $usersTable . '.' . $columnString . ') as name';
-            break;
-        default:
-            $columnString = implode(", ' ', " . $tablePrefix . $usersTable . '.', $columns);
-            $selectString = 'concat(' . $tablePrefix . $usersTable . '.' . $columnString . ') as name';
+            case 'pgsql':
+            case 'sqlite':
+                $columnString = implode(" || ' ' || " . $tablePrefix . $usersTable . '.', $columns);
+                $selectString = '(' . $tablePrefix . $usersTable . '.' . $columnString . ') as name';
+                break;
+            case 'sqlsrv':
+                $columnString = implode(" + ' ' + " . $tablePrefix . $usersTable . '.', $columns);
+                $selectString = '(' . $tablePrefix . $usersTable . '.' . $columnString . ') as name';
+                break;
+            default:
+                $columnString = implode(", ' ', " . $tablePrefix . $usersTable . '.', $columns);
+                $selectString = 'concat(' . $tablePrefix . $usersTable . '.' . $columnString . ') as name';
         }
 
         return $selectString;
@@ -398,21 +408,24 @@ class Thread extends Eloquent
      */
     public function userUnreadMessages($userId)
     {
-        $messages = $this->messages()->get();
-
         try {
             $participant = $this->getParticipantFromUser($userId);
         } catch (ModelNotFoundException $e) {
             return collect();
         }
 
+        $messages = $this->messages();
+
         if (!$participant->last_read) {
-            return $messages;
+            return $messages->get();
         }
 
-        return $messages->filter(function ($message) use ($participant) {
-            return $message->updated_at->gt($participant->last_read);
-        });
+        $messages = $messages
+            ->where('created_at', '>=', $participant->last_read)
+            ->where('user_id', '!=', $participant->id)
+            ->get();
+
+        return $messages;
     }
 
     /**
