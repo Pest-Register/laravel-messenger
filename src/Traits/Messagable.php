@@ -48,7 +48,8 @@ trait Messagable
             Models::table('participants'),
             'user_id',
             'thread_id'
-        );
+        )
+            ->whereNull('participants.deleted_at');
     }
 
     /**
